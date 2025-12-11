@@ -9,14 +9,16 @@
 理解了以上的概念，就能容易理解服务器开发的两种经典模式——Reactor和Proactor模式。详细请参考游双《Linux高性能服务器编程》第八章第四节、陈硕《Linux多线程服务器编程》第六章第六节。
 
 > 如何深刻理解Reactor和Proactor？ - 小林coding的回答 - 知乎
-https://www.zhihu.com/question/26943938/answer/1856426252
+> https://www.zhihu.com/question/26943938/answer/1856426252
 
 由于Linux内核系统调用的设计更加符合Reactor模式，所以绝大部分高性能服务器都采用Reactor模式进行开发，我们的服务器也使用这种模式。
 
 接下来我们要将服务器改造成Reactor模式。首先我们将整个服务器抽象成一个`Server`类，这个类中有一个main-Reactor（在这个版本没有sub-Reactor），里面的核心是一个`EventLoop`（libevent中叫做EventBase），这是一个事件循环，我们添加需要监听的事务到这个事件循环内，每次有事件发生时就会通知（在程序中返回给我们`Channel`），然后根据不同的描述符、事件类型进行处理（以回调函数的方式）。
+
 > 如果你不太清楚这个自然段在讲什么，请先看一看前面提到的两本书的具体章节。
 
 EventLoop类的定义如下：
+
 ```cpp
 class EventLoop {
 private:
@@ -29,7 +31,9 @@ public:
     void updateChannel(Channel*);
 };
 ```
+
 调用`loop()`函数可以开始事件驱动，实际上就是原来的程序中调用`epoll_wait()`函数的死循环：
+
 ```cpp
 void EventLoop::loop(){
     while(!quit){
@@ -41,13 +45,17 @@ void EventLoop::loop(){
     }
 }
 ```
+
 现在我们可以以这种方式来启动服务器，和muduo的代码已经很接近了：
+
 ```cpp
 EventLoop *loop = new EventLoop();
 Server *server = new Server(loop);
 loop->loop();
 ```
+
 服务器定义如下：
+
 ```cpp
 class Server {
 private:
@@ -59,11 +67,11 @@ public:
     void newConnection(Socket *serv_sock);
 };
 ```
+
 这个版本服务器内只有一个`EventLoop`，当其中有可读事件发生时，我们可以拿到该描述符对应的`Channel`。在新建`Channel`时，根据`Channel`描述符的不同分别绑定了两个回调函数，`newConnection()`函数被绑定到服务器socket上，`handlrReadEvent()`被绑定到新接受的客户端socket上。这样如果服务器socket有可读事件，`Channel`里的`handleEvent()`函数实际上会调用`Server`类的`newConnection()`新建连接。如果客户端socket有可读事件，`Channel`里的`handleEvent()`函数实际上会调用`Server`类的`handlrReadEvent()`响应客户端请求。
 
 至此，我们已经抽象出了`EventLoop`和`Channel`，构成了事件驱动模型。这两个类和服务器核心`Server`已经没有任何关系，经过完善后可以被任何程序复用，达到了事件驱动的设计思想，现在我们的服务器也可以看成一个最简易的Reactor模式服务器。
 
 当然，这个Reactor模式并不是一个完整的Reactor模式，如处理事件请求仍然在事件驱动的线程里，这显然违背了Reactor的概念。我们还需要做很多工作，在接下来几天的教程里会进一步完善。
-
 
 完整源代码：[https://github.com/yuesong-feng/30dayMakeCppServer/tree/main/code/day06](https://github.com/yuesong-feng/30dayMakeCppServer/tree/main/code/day06)
